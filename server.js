@@ -1,10 +1,20 @@
-// server.js
 import express from "express";
 import session from "express-session";
 import FileStore from "session-file-store";
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import dotenv from "dotenv";
+import {
+  findUser,
+  verifyPassword,
+  addUser,
+  getUsers,
+} from "./userOperations.js";
+import path from "path";
+import { fileURLToPath } from "url";
+
+// Get the directory name of the current module
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Load environment variables
 dotenv.config();
@@ -13,14 +23,15 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const FileStoreSession = FileStore(session);
 
-// Parse the users from env
-const users = JSON.parse(process.env.USERS || "[]");
+// Set up EJS as the view engine
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
 
 // Middleware setup
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Session configuration updated to use env
+// Session configuration
 app.use(
   session({
     store: new FileStoreSession({
@@ -45,14 +56,20 @@ app.use(passport.session());
 
 // Configure Passport's Local Strategy
 passport.use(
-  new LocalStrategy(function (username, password, done) {
-    const user = users.find(
-      (u) => u.username === username && u.password === password
-    );
-    if (!user) {
-      return done(null, false, { message: "Incorrect username or password" });
+  new LocalStrategy(async (username, password, done) => {
+    try {
+      const user = await findUser(username);
+      if (!user) {
+        return done(null, false, { message: "Incorrect username or password" });
+      }
+      const isMatch = await verifyPassword(password, user.password);
+      if (!isMatch) {
+        return done(null, false, { message: "Incorrect username or password" });
+      }
+      return done(null, user);
+    } catch (error) {
+      return done(error);
     }
-    return done(null, user);
   })
 );
 
@@ -62,18 +79,22 @@ passport.serializeUser((user, done) => {
 });
 
 // Deserialize user from the session
-passport.deserializeUser((id, done) => {
-  const user = users.find((u) => u.id === id);
-  done(null, user);
+passport.deserializeUser(async (id, done) => {
+  try {
+    const users = await getUsers();
+    const user = users.find((u) => u.id === id);
+    done(null, user);
+  } catch (error) {
+    done(error);
+  }
 });
 
 // Routes
 app.get("/", (req, res) => {
-  res.send(`Home page. Authenticated: ${req.isAuthenticated()}`);
+  res.render("home", { isAuthenticated: req.isAuthenticated() });
 });
 
 app.get("/logout", (req, res) => {
-  // Modern versions of passport require a callback for logout
   req.logout((err) => {
     if (err) {
       return res.status(500).send("Error logging out");
@@ -86,30 +107,44 @@ app.get("/protected", (req, res) => {
   if (!req.isAuthenticated()) {
     return res.status(401).send("You need to log in first");
   }
-  res.send(`
-      Welcome ${req.user.username}! This is a protected route.<br>
-      <a href="/logout">Logout</a>
-    `);
+  res.render("protected", { username: req.user.username });
 });
 
 // Login routes
 app.get("/login", (req, res) => {
-  res.send(`
-    <form action="/login" method="post">
-      Username: <input name="username"><br>
-      Password: <input name="password" type="password"><br>
-      <button>Log In</button>
-    </form>
-  `);
+  res.render("login");
 });
 
-app.post(
-  "/login",
-  passport.authenticate("local", {
-    successRedirect: "/protected",
-    failureRedirect: "/login",
-  })
-);
+app.post("/login", (req, res, next) => {
+  passport.authenticate("local", (err, user, info) => {
+    if (err) {
+      return next(err);
+    }
+    if (!user) {
+      return res.redirect("/login");
+    }
+    req.logIn(user, (err) => {
+      if (err) {
+        return next(err);
+      }
+      return res.redirect("/protected");
+    });
+  })(req, res, next);
+});
+
+app.get("/register", (req, res) => {
+  res.render("register");
+});
+
+app.post("/register", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    await addUser(username, password);
+    res.redirect("/login");
+  } catch (error) {
+    res.status(500).send("Error registering new user");
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}`);

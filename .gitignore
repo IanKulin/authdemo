@@ -1,4 +1,5 @@
 .DS_Store
 .env
+.users
 node_modules
 sessions
