@@ -107,7 +107,10 @@ app.get("/protected", (req, res) => {
   if (!req.isAuthenticated()) {
     return res.status(401).send("You need to log in first");
   }
-  res.render("protected", { username: req.user.username });
+  res.render("protected", {
+    username: req.user.username,
+    role: req.user.role,
+  });
 });
 
 // Login routes
