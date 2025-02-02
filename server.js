@@ -50,11 +50,11 @@ app.use(
   })
 );
 
-// Initialize Passport and restore authentication state from session
+// Initialize Passport connect to session
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Configure Passport's Local Strategy
+// Configure Local Strategy
 passport.use(
   new LocalStrategy(async (username, password, done) => {
     try {
@@ -73,12 +73,12 @@ passport.use(
   })
 );
 
-// Serialize user for the session
+// Get the id for a user
 passport.serializeUser((user, done) => {
   done(null, user.id);
 });
 
-// Deserialize user from the session
+// Get a user from an id
 passport.deserializeUser(async (id, done) => {
   try {
     const users = await getUsers();
@@ -89,7 +89,6 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-// Routes
 app.get("/", (req, res) => {
   res.render("home", { isAuthenticated: req.isAuthenticated() });
 });
@@ -113,7 +112,6 @@ app.get("/protected", (req, res) => {
   });
 });
 
-// Login routes
 app.get("/login", (req, res) => {
   res.render("login");
 });
